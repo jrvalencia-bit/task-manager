@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback} from 'react';
 import { auth, logout } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import Login from './Login';
@@ -32,8 +32,10 @@ function App() {
   const [filtroPrioridad, setFiltroPrioridad] = useState("Todas");
   const [filtroCategoria, setFiltroCategoria] = useState("Todas");
 
-  // NUEVO ESTADO: Para las tareas seleccionadas
+  // ESTADOS NUEVOS PARA UI MEJORADA
   const [seleccionadas, setSeleccionadas] = useState([]);
+  const [modoSeleccion, setModoSeleccion] = useState(false); // ¿Está activo el modo borrar?
+  const [menuAbiertoId, setMenuAbiertoId] = useState(null); // ¿Qué tuerca está abierta?
 
   // MODAL
   const [modal, setModal] = useState({
@@ -57,6 +59,13 @@ function App() {
   }, [modoOscuro]);
 
   const toggleModoOscuro = () => setModoOscuro(!modoOscuro);
+
+  // Cierra el menú de tuerca si haces clic fuera
+  useEffect(() => {
+      const handleClickFuera = () => setMenuAbiertoId(null);
+      if (menuAbiertoId) document.addEventListener('click', handleClickFuera);
+      return () => document.removeEventListener('click', handleClickFuera);
+  }, [menuAbiertoId]);
 
   const obtenerIdUsuario = useCallback(() => {
     if (usuario) return usuario.uid;
@@ -88,7 +97,7 @@ function App() {
   }, [recargar, obtenerIdUsuario]);
 
   const handleOnDragEnd = async (result) => {
-    if (!result.destination) return;
+    if (!result.destination || modoSeleccion) return; // No mover si estamos borrando
     const items = Array.from(tareas);
     const [reorderedItem] = items.splice(result.source.index, 1);
     items.splice(result.destination.index, 0, reorderedItem);
@@ -128,21 +137,29 @@ function App() {
     setRecargar(!recargar);
   };
 
-  // NUEVA FUNCIÓN: Eliminar múltiples tareas
+  // --- LÓGICA DE BORRADO MÚLTIPLE ---
+  const activarModoSeleccion = () => {
+      setModoSeleccion(true);
+      setSeleccionadas([]);
+  };
+
+  const cancelarModoSeleccion = () => {
+      setModoSeleccion(false);
+      setSeleccionadas([]);
+  };
+
   const eliminarMultiples = async () => {
       if(!seleccionadas.length) return;
-      if(!confirm(`¿Estás seguro de borrar ${seleccionadas.length} tareas?`)) return;
+      if(!confirm(`¿Eliminar ${seleccionadas.length} tareas permanentemente?`)) return;
 
-      // Borramos todas las seleccionadas una por una
       await Promise.all(seleccionadas.map(id => 
           fetch(`${API_URL}/tareas/${id}`, { method: 'DELETE' })
       ));
       
-      setSeleccionadas([]); // Limpiar selección
-      setRecargar(!recargar); // Recargar lista
+      cancelarModoSeleccion();
+      setRecargar(!recargar);
   };
 
-  // NUEVA FUNCIÓN: Manejar checkbox
   const toggleSeleccion = (id) => {
       if(seleccionadas.includes(id)) {
           setSeleccionadas(seleccionadas.filter(item => item !== id));
@@ -203,6 +220,7 @@ function App() {
   };
 
   const toggleCompletada = async (id, estadoActual) => {
+    if (modoSeleccion) return; // No completar si estamos seleccionando
     await fetch(`${API_URL}/tareas/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -257,6 +275,12 @@ function App() {
       }
   };
 
+  const toggleMenu = (e, id) => {
+      e.stopPropagation(); // Evita que se cierre inmediatamente
+      if (menuAbiertoId === id) setMenuAbiertoId(null);
+      else setMenuAbiertoId(id);
+  };
+
   if (cargandoUsuario) return <div className="min-h-screen flex items-center justify-center bg-white dark:bg-gray-900 text-gray-800 dark:text-white">Cargando...</div>;
   if (!usuario && !modoInvitado) return <Login activarInvitado={() => setModoInvitado(true)} />;
 
@@ -292,7 +316,7 @@ function App() {
         </div>
       )}
 
-      <div className="bg-white dark:bg-gray-800 p-4 sm:p-8 rounded-xl shadow-2xl w-full max-w-lg relative transition-colors duration-300">
+      <div className="bg-white dark:bg-gray-800 p-4 sm:p-8 rounded-xl shadow-2xl w-full max-w-lg relative transition-colors duration-300 min-h-[500px]">
         <div className="flex justify-between items-center mb-4">
             <div className="flex items-center gap-3">{usuario?.photoURL ? <img src={usuario.photoURL} alt="Avatar" className="w-10 h-10 rounded-full border-2 border-blue-500" /> : <div className="w-10 h-10 rounded-full bg-indigo-500 flex items-center justify-center text-white font-bold text-lg">Inv</div>}<div><h2 className="text-sm font-bold text-gray-800 dark:text-white">{usuario ? usuario.displayName : "Invitado"}</h2></div></div>
             <div className="flex items-center gap-3"><button onClick={toggleModoOscuro} className="p-2 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-yellow-400 hover:scale-110">{modoOscuro ? "☀️" : "🌙"}</button><button onClick={manejarSalir} className="text-xs text-red-500 hover:underline font-semibold">Salir</button></div>
@@ -302,7 +326,7 @@ function App() {
 
         <div className="mb-6"><div className="flex justify-between items-end mb-1"><span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">{obtenerMensajeProgreso()}</span><span className="text-xs text-gray-500 dark:text-gray-400 font-medium">{tareasCompletadas} de {totalTareas}</span></div><div className="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-2.5 overflow-hidden"><div className="bg-indigo-600 dark:bg-indigo-500 h-2.5 rounded-full transition-all duration-700 ease-out" style={{ width: `${porcentaje}%` }}></div></div></div>
 
-        {/* --- BARRA DE BÚSQUEDA Y FILTROS MEJORADA --- */}
+        {/* --- BARRA DE BÚSQUEDA Y FILTROS --- */}
         <div className="mb-6 flex flex-col gap-2">
             <div className="flex flex-col sm:flex-row gap-2">
                 <input type="text" placeholder="🔍 Buscar tarea..." className="w-full bg-gray-100 dark:bg-gray-700 border-none p-2 rounded-lg text-sm focus:ring-2 focus:ring-indigo-200 dark:text-white transition placeholder-gray-400 dark:placeholder-gray-500" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
@@ -323,13 +347,6 @@ function App() {
                     </select>
                 </div>
             </div>
-
-            {/* BOTÓN PARA BORRAR SELECCIONADAS (Solo visible si hay selección) */}
-            {seleccionadas.length > 0 && (
-                <button onClick={eliminarMultiples} className="w-full py-1 bg-red-100 text-red-600 text-xs font-bold rounded hover:bg-red-200 dark:bg-red-900/30 dark:text-red-300 transition animate-pulse">
-                    🗑 Borrar {seleccionadas.length} tareas seleccionadas
-                </button>
-            )}
         </div>
 
         <form onSubmit={agregarTarea} className="flex flex-col gap-4 mb-4 bg-gray-50 dark:bg-gray-700/50 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-inner">
@@ -356,16 +373,37 @@ function App() {
           </button>
         </form>
 
+        {/* --- BOTÓN DE BORRADO MASIVO (SOLO SI HAY TAREAS) --- */}
+        {tareas.length > 0 && !mensajeError && (
+             <div className="mb-4 flex justify-end">
+                {!modoSeleccion ? (
+                    <button onClick={activarModoSeleccion} className="text-xs text-red-500 hover:text-red-700 dark:hover:text-red-400 font-semibold underline decoration-dotted underline-offset-4 cursor-pointer">
+                        Eliminar varias tareas
+                    </button>
+                ) : (
+                    <div className="flex gap-2 items-center w-full bg-red-50 dark:bg-red-900/20 p-2 rounded-lg border border-red-100 dark:border-red-800 animate-in slide-in-from-top-2">
+                        <span className="text-xs font-bold text-red-600 dark:text-red-300 flex-1">Selecciona las tareas a borrar</span>
+                        <button onClick={cancelarModoSeleccion} className="text-xs text-gray-500 px-3 py-1 bg-white dark:bg-gray-700 rounded border hover:bg-gray-50">Cancelar</button>
+                        {seleccionadas.length > 0 && (
+                            <button onClick={eliminarMultiples} className="text-xs text-white px-3 py-1 bg-red-500 rounded font-bold shadow-sm hover:bg-red-600">
+                                Borrar ({seleccionadas.length})
+                            </button>
+                        )}
+                    </div>
+                )}
+             </div>
+        )}
+
         {mensajeError && <div className="mb-6 text-center text-red-500 text-xs font-bold bg-red-50 dark:bg-red-900/20 p-2 rounded border border-red-200 dark:border-red-800 animate-pulse">{mensajeError}</div>}
 
         {tareas.length === 0 && !mensajeError && <div className="text-center py-12 opacity-70"><p className="text-5xl mb-4 animate-bounce">🍃</p><p className="text-gray-500 dark:text-gray-400 text-lg font-medium">Todo limpio</p></div>}
         {tareas.length > 0 && tareasFiltradas.length === 0 && !mensajeError && <div className="text-center py-12 opacity-70"><p className="text-4xl mb-2">🔍</p><p className="text-gray-400 dark:text-gray-500 text-sm">No encontramos tareas.</p></div>}
 
         <DragDropContext onDragEnd={handleOnDragEnd}>
-            {filtrosActivos ? (
+            {filtrosActivos || modoSeleccion ? (
                <ul className="space-y-3 pb-4">
                   {tareasFiltradas.map((tarea) => (
-                      <TareaItem key={tarea._id} tarea={tarea} toggleCompletada={toggleCompletada} iniciarEdicion={iniciarEdicion} confirmarBorrado={confirmarBorrado} esVencida={esVencida} obtenerColorBorde={obtenerColorBorde} obtenerEstiloCategoria={obtenerEstiloCategoria} seleccionadas={seleccionadas} toggleSeleccion={toggleSeleccion} />
+                      <TareaItem key={tarea._id} tarea={tarea} toggleCompletada={toggleCompletada} iniciarEdicion={iniciarEdicion} confirmarBorrado={confirmarBorrado} esVencida={esVencida} obtenerColorBorde={obtenerColorBorde} obtenerEstiloCategoria={obtenerEstiloCategoria} seleccionadas={seleccionadas} toggleSeleccion={toggleSeleccion} modoSeleccion={modoSeleccion} menuAbiertoId={menuAbiertoId} toggleMenu={toggleMenu} />
                   ))}
                </ul>
             ) : (
@@ -376,7 +414,7 @@ function App() {
                                <Draggable key={tarea._id} draggableId={tarea._id} index={index}>
                                    {(provided) => (
                                        <div ref={provided.innerRef} {...provided.draggableProps} {...provided.dragHandleProps}>
-                                           <TareaItem tarea={tarea} toggleCompletada={toggleCompletada} iniciarEdicion={iniciarEdicion} confirmarBorrado={confirmarBorrado} esVencida={esVencida} obtenerColorBorde={obtenerColorBorde} obtenerEstiloCategoria={obtenerEstiloCategoria} isDraggable={true} seleccionadas={seleccionadas} toggleSeleccion={toggleSeleccion} />
+                                           <TareaItem tarea={tarea} toggleCompletada={toggleCompletada} iniciarEdicion={iniciarEdicion} confirmarBorrado={confirmarBorrado} esVencida={esVencida} obtenerColorBorde={obtenerColorBorde} obtenerEstiloCategoria={obtenerEstiloCategoria} isDraggable={true} seleccionadas={seleccionadas} toggleSeleccion={toggleSeleccion} modoSeleccion={modoSeleccion} menuAbiertoId={menuAbiertoId} toggleMenu={toggleMenu} />
                                        </div>
                                    )}
                                </Draggable>
@@ -393,31 +431,36 @@ function App() {
   );
 }
 
-// COMPONENTE ACTUALIZADO CON CHECKBOX Y BOTONES VISIBLES
-function TareaItem({ tarea, toggleCompletada, iniciarEdicion, confirmarBorrado, esVencida, obtenerColorBorde, obtenerEstiloCategoria, isDraggable, seleccionadas, toggleSeleccion }) {
+// COMPONENTE TAREA ACTUALIZADO (Con Menú de Tuerca y Modo Selección)
+function TareaItem({ tarea, toggleCompletada, iniciarEdicion, confirmarBorrado, esVencida, obtenerColorBorde, obtenerEstiloCategoria, isDraggable, seleccionadas, toggleSeleccion, modoSeleccion, menuAbiertoId, toggleMenu }) {
     const estaVencida = esVencida(tarea.fechaLimite) && !tarea.completada;
     const claseBorde = obtenerColorBorde(tarea.prioridad);
     const estaSeleccionada = seleccionadas.includes(tarea._id);
+    const menuAbierto = menuAbiertoId === tarea._id;
 
     return (
-        <li className={`group flex justify-between items-center p-3 rounded-lg border bg-white dark:bg-gray-800 dark:border-gray-700 hover:shadow-md transition-all ${claseBorde} ${tarea.completada ? 'opacity-60 bg-gray-50 dark:bg-gray-800/50' : ''} ${estaSeleccionada ? 'ring-2 ring-indigo-300 dark:ring-indigo-600 bg-indigo-50 dark:bg-indigo-900/10' : ''}`}>
+        <li className={`group relative flex justify-between items-center p-3 rounded-lg border bg-white dark:bg-gray-800 dark:border-gray-700 hover:shadow-md transition-all ${claseBorde} ${tarea.completada && !modoSeleccion ? 'opacity-60 bg-gray-50 dark:bg-gray-800/50' : ''} ${estaSeleccionada ? 'ring-2 ring-red-300 dark:ring-red-600 bg-red-50 dark:bg-red-900/10' : ''}`}>
             <div className="flex items-center gap-3 flex-1 overflow-hidden">
                 
-                {/* CHECKBOX DE SELECCIÓN */}
-                <input 
-                    type="checkbox" 
-                    checked={estaSeleccionada} 
-                    onChange={() => toggleSeleccion(tarea._id)}
-                    className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                />
+                {/* 1. MODO SELECCIÓN: CHECKBOX */}
+                {modoSeleccion && (
+                     <div onClick={() => toggleSeleccion(tarea._id)} className={`w-5 h-5 rounded border flex items-center justify-center cursor-pointer transition-colors ${estaSeleccionada ? 'bg-red-500 border-red-500' : 'border-gray-300 bg-white'}`}>
+                        {estaSeleccionada && <span className="text-white text-xs font-bold">✓</span>}
+                     </div>
+                )}
 
-                {isDraggable && <span className="text-gray-300 dark:text-gray-600 cursor-grab text-xl">:::</span>}
-                
-                <button onClick={() => toggleCompletada(tarea._id, tarea.completada)} className={`min-w-[24px] h-6 rounded-full border-2 flex items-center justify-center transition-colors ${tarea.completada ? 'bg-green-500 border-green-500' : 'border-gray-300 dark:border-gray-500 hover:border-indigo-500'}`}>
-                    {tarea.completada && <span className="text-white text-xs">✓</span>}
-                </button>
-                <div className="flex flex-col">
-                    <span onClick={() => toggleCompletada(tarea._id, tarea.completada)} className={`text-sm sm:text-lg truncate cursor-pointer select-none dark:text-gray-200 ${tarea.completada ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-700'}`}>{tarea.titulo}</span>
+                {/* 2. MODO NORMAL: DRAG HANDLE Y CHECKBOX COMPLETAR */}
+                {!modoSeleccion && (
+                    <>
+                        {isDraggable && <span className="text-gray-300 dark:text-gray-600 cursor-grab text-xl">:::</span>}
+                        <button onClick={() => toggleCompletada(tarea._id, tarea.completada)} className={`min-w-[24px] h-6 rounded-full border-2 flex items-center justify-center transition-colors ${tarea.completada ? 'bg-green-500 border-green-500' : 'border-gray-300 dark:border-gray-500 hover:border-indigo-500'}`}>
+                            {tarea.completada && <span className="text-white text-xs">✓</span>}
+                        </button>
+                    </>
+                )}
+
+                <div className="flex flex-col flex-1">
+                    <span onClick={() => !modoSeleccion && toggleCompletada(tarea._id, tarea.completada)} className={`text-sm sm:text-lg truncate cursor-pointer select-none dark:text-gray-200 ${tarea.completada && !modoSeleccion ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-700'}`}>{tarea.titulo}</span>
                     <div className="flex gap-2 items-center mt-1 flex-wrap">
                         <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${obtenerEstiloCategoria(tarea.categoria || 'General')}`}>
                             {tarea.categoria || 'General'}
@@ -429,11 +472,28 @@ function TareaItem({ tarea, toggleCompletada, iniciarEdicion, confirmarBorrado, 
                     </div>
                 </div>
             </div>
-            {/* BOTONES SIEMPRE VISIBLES (Sin opacity-0) */}
-            <div className="flex gap-1 ml-2">
-                <button onClick={() => iniciarEdicion(tarea._id, tarea.titulo, tarea.fechaLimite, tarea.prioridad, tarea.categoria)} className="text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 p-2 rounded">✎</button>
-                <button onClick={() => confirmarBorrado(tarea._id)} className="text-gray-400 hover:text-red-600 dark:hover:text-red-400 p-2 rounded">🗑</button>
-            </div>
+
+            {/* 3. TUERCA DE CONFIGURACIÓN (SOLO VISIBLE SI NO ESTAMOS BORRANDO MASIVAMENTE) */}
+            {!modoSeleccion && (
+                <div className="relative ml-2">
+                    <button onClick={(e) => toggleMenu(e, tarea._id)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-2 text-xl rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition">
+                        ⚙️
+                    </button>
+                    
+                    {/* MENÚ DESPLEGABLE FLOTANTE */}
+                    {menuAbierto && (
+                        <div className="absolute right-0 top-full mt-1 w-32 bg-white dark:bg-gray-800 shadow-xl rounded-lg border border-gray-100 dark:border-gray-600 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-100 origin-top-right">
+                            <button onClick={() => iniciarEdicion(tarea._id, tarea.titulo, tarea.fechaLimite, tarea.prioridad, tarea.categoria)} className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2">
+                                ✏️ Editar
+                            </button>
+                            <div className="h-px bg-gray-100 dark:bg-gray-700"></div>
+                            <button onClick={() => confirmarBorrado(tarea._id)} className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2">
+                                🗑 Borrar
+                            </button>
+                        </div>
+                    )}
+                </div>
+            )}
         </li>
     );
 }
