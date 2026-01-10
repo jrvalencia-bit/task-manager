@@ -8,7 +8,7 @@ function Login({ activarInvitado }) {
       {/* --- NUEVO LOGO --- */}
       {/* Ajusté el tamaño y añadí sombra para que resalte en el fondo oscuro */}
       <img 
-        src="/favicon.png" 
+        src="/favicon.ico" 
         alt="Logo Task Manager" 
         className="w-24 h-24 mb-6 rounded-2xl shadow-2xl hover:scale-110 transition-transform duration-300" 
       />
