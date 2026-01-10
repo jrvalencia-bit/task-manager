@@ -15,15 +15,17 @@ mongoose.connect(URI)
     .then(() => console.log('--> Conectado a la Base de Datos con éxito'))
     .catch((err) => console.error('Error de conexión:', err));
 
-// 1. SCHEMA ACTUALIZADO (Con 'categoria')
+// 1. SCHEMA ACTUALIZADO (Con TTL para limpieza automática)
 const TareaSchema = new mongoose.Schema({
     titulo: { type: String, required: true },
     completada: { type: Boolean, default: false },
     usuarioId: { type: String, required: true },
     fechaLimite: { type: Date },
     prioridad: { type: String, default: 'Media' },
-    categoria: { type: String, default: 'General' }, // <--- NUEVO CAMPO
-    orden: { type: Number, default: 0 }
+    categoria: { type: String, default: 'General' },
+    orden: { type: Number, default: 0 },
+    // Autolimpieza: Las tareas se borran solas después de 24 horas (86400 seg)
+    createdAt: { type: Date, default: Date.now, expires: 86400 } 
 });
 
 const Tarea = mongoose.model('Tarea', TareaSchema);
@@ -37,7 +39,6 @@ app.get('/tareas', async (req, res) => {
     res.json(tareas);
 });
 
-// POST ACTUALIZADO
 app.post('/tareas', async (req, res) => {
     const totalTareas = await Tarea.countDocuments({ usuarioId: req.body.usuarioId });
 
@@ -46,14 +47,13 @@ app.post('/tareas', async (req, res) => {
         usuarioId: req.body.usuarioId,
         fechaLimite: req.body.fechaLimite,
         prioridad: req.body.prioridad,
-        categoria: req.body.categoria, // <--- GUARDAMOS LA CATEGORÍA
+        categoria: req.body.categoria,
         orden: totalTareas
     });
     await nuevaTarea.save();
     res.json(nuevaTarea);
 });
 
-// PUT (Actualiza cualquier campo que enviemos, incluida la categoría)
 app.put('/tareas/:id', async (req, res) => {
     try {
         const { id } = req.params;
