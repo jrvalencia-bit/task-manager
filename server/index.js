@@ -6,19 +6,27 @@ const cors = require('cors');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// ==========================================
+// CONFIGURACIÓN DE MIDDLEWARES
+// ==========================================
 app.use(cors({
-    origin: process.env.CLIENT_URL || "http://localhost:5173", // Usa la variable o localhost si fallas
+    origin: process.env.CLIENT_URL || "http://localhost:5173",
     credentials: true
 }));
 app.use(express.json());
 
+// ==========================================
+// CONEXIÓN A BASE DE DATOS
+// ==========================================
 const URI = process.env.MONGO_URI;
 
 mongoose.connect(URI)
     .then(() => console.log('--> Conectado a la Base de Datos con éxito'))
     .catch((err) => console.error('Error de conexión:', err));
 
-// 1. SCHEMA ACTUALIZADO (Con TTL para limpieza automática)
+// ==========================================
+// MODELO DE DATOS (SCHEMA)
+// ==========================================
 const TareaSchema = new mongoose.Schema({
     titulo: { type: String, required: true },
     completada: { type: Boolean, default: false },
@@ -27,14 +35,21 @@ const TareaSchema = new mongoose.Schema({
     prioridad: { type: String, default: 'Media' },
     categoria: { type: String, default: 'General' },
     orden: { type: Number, default: 0 },
-    // Autolimpieza: Las tareas se borran solas después de 24 horas (86400 seg)
+    // TTL: Las tareas se eliminan automáticamente tras 24h (86400s)
     createdAt: { type: Date, default: Date.now, expires: 86400 } 
 });
 
 const Tarea = mongoose.model('Tarea', TareaSchema);
 
-// RUTAS
+// ==========================================
+// RUTAS DE LA API (CONTROLLERS)
+// ==========================================
 
+/**
+ * @desc    Obtiene todas las tareas de un usuario específico
+ * @route   GET /tareas
+ * @access  Privado (Requiere usuarioId)
+ */
 app.get('/tareas', async (req, res) => {
     const { usuarioId } = req.query;
     if (!usuarioId) return res.status(400).json({ error: "Falta usuarioId" });
@@ -42,6 +57,11 @@ app.get('/tareas', async (req, res) => {
     res.json(tareas);
 });
 
+/**
+ * @desc    Crea una nueva tarea y la coloca al final de la lista
+ * @route   POST /tareas
+ * @access  Privado
+ */
 app.post('/tareas', async (req, res) => {
     const totalTareas = await Tarea.countDocuments({ usuarioId: req.body.usuarioId });
 
@@ -57,6 +77,11 @@ app.post('/tareas', async (req, res) => {
     res.json(nuevaTarea);
 });
 
+/**
+ * @desc    Actualiza una tarea existente por su ID
+ * @route   PUT /tareas/:id
+ * @access  Privado
+ */
 app.put('/tareas/:id', async (req, res) => {
     try {
         const { id } = req.params;
@@ -67,6 +92,11 @@ app.put('/tareas/:id', async (req, res) => {
     }
 });
 
+/**
+ * @desc    Actualiza el orden de múltiples tareas (Drag & Drop)
+ * @route   PUT /tareas/reordenar/lista
+ * @access  Privado
+ */
 app.put('/tareas/reordenar/lista', async (req, res) => {
     try {
         const { tareas } = req.body;
@@ -78,6 +108,11 @@ app.put('/tareas/reordenar/lista', async (req, res) => {
     }
 });
 
+/**
+ * @desc    Elimina una tarea por su ID
+ * @route   DELETE /tareas/:id
+ * @access  Privado
+ */
 app.delete('/tareas/:id', async (req, res) => {
     try {
         const { id } = req.params;
@@ -88,6 +123,9 @@ app.delete('/tareas/:id', async (req, res) => {
     }
 });
 
+// ==========================================
+// INICIO DEL SERVIDOR
+// ==========================================
 app.listen(PORT, () => {
     console.log(`Servidor corriendo en el puerto ${PORT}`);
 });
